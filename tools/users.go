@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/anorph/foundrydb-sdk-go/foundrydb"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
-	"github.com/anorph/foundrydb-mcp/client"
 )
 
 // RegisterUserTools registers database user and connection string tools.
-func RegisterUserTools(s *server.MCPServer, c *client.Client) {
+func RegisterUserTools(s *server.MCPServer, c *foundrydb.Client) {
 	s.AddTool(mcp.NewTool("list_users",
 		mcp.WithDescription("List all database users for a managed service"),
 		mcp.WithString("service_id",
@@ -48,7 +48,7 @@ func RegisterUserTools(s *server.MCPServer, c *client.Client) {
 	), handleGetConnectionString(c))
 }
 
-func handleListUsers(c *client.Client) server.ToolHandlerFunc {
+func handleListUsers(c *foundrydb.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		serviceID, _ := req.GetArguments()["service_id"].(string)
 		if serviceID == "" {
@@ -65,7 +65,7 @@ func handleListUsers(c *client.Client) server.ToolHandlerFunc {
 	}
 }
 
-func handleRevealPassword(c *client.Client) server.ToolHandlerFunc {
+func handleRevealPassword(c *foundrydb.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		serviceID, _ := args["service_id"].(string)
@@ -81,7 +81,7 @@ func handleRevealPassword(c *client.Client) server.ToolHandlerFunc {
 	}
 }
 
-func handleGetConnectionString(c *client.Client) server.ToolHandlerFunc {
+func handleGetConnectionString(c *foundrydb.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		serviceID, _ := args["service_id"].(string)
@@ -95,43 +95,37 @@ func handleGetConnectionString(c *client.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("service_id and username are required"), nil
 		}
 
-		result, err := c.RevealPassword(ctx, serviceID, username)
+		creds, err := c.RevealPassword(ctx, serviceID, username)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 
-		connString, _ := result["connection_string"].(string)
-		password, _ := result["password"].(string)
-		host, _ := result["host"].(string)
-		port := result["port"]
-		database, _ := result["database"].(string)
-
-		portStr := fmt.Sprintf("%v", port)
+		portStr := fmt.Sprintf("%d", creds.Port)
 
 		switch strings.ToLower(format) {
 		case "env":
-			return mcp.NewToolResultText(fmt.Sprintf("DATABASE_URL=%s", connString)), nil
+			return mcp.NewToolResultText(fmt.Sprintf("DATABASE_URL=%s", creds.ConnectionString)), nil
 		case "psql":
 			return mcp.NewToolResultText(fmt.Sprintf(
 				"psql \"%s\"\n\n# Or with explicit args:\nPGPASSWORD=%s psql -h %s -p %s -U %s -d %s",
-				connString, password, host, portStr, username, database,
+				creds.ConnectionString, creds.Password, creds.Host, portStr, creds.Username, creds.Database,
 			)), nil
 		case "mysql":
 			return mcp.NewToolResultText(fmt.Sprintf(
 				"mysql -h %s -P %s -u %s -p%s %s",
-				host, portStr, username, password, database,
+				creds.Host, portStr, creds.Username, creds.Password, creds.Database,
 			)), nil
 		case "mongosh":
 			return mcp.NewToolResultText(fmt.Sprintf(
-				"mongosh \"%s\"", connString,
+				"mongosh \"%s\"", creds.ConnectionString,
 			)), nil
 		case "redis-cli":
 			return mcp.NewToolResultText(fmt.Sprintf(
 				"redis-cli -h %s -p %s --user %s --pass %s",
-				host, portStr, username, password,
+				creds.Host, portStr, creds.Username, creds.Password,
 			)), nil
 		default:
-			return mcp.NewToolResultText(connString), nil
+			return mcp.NewToolResultText(creds.ConnectionString), nil
 		}
 	}
 }
