@@ -1,13 +1,8 @@
 package tools
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"strings"
 	"time"
 
 	"github.com/anorph/foundrydb-sdk-go/foundrydb"
@@ -36,76 +31,28 @@ func RegisterMonitoringTools(s *server.MCPServer, cfg foundrydb.Config) {
 			mcp.Description("Number of log lines to retrieve (default: 100, max: 1000)"),
 		),
 	), handleGetLogs(cfg))
+
+	s.AddTool(mcp.NewTool("get_task_summary",
+		mcp.WithDescription("Get per-node provisioning and operation task progress for a service. Use this to monitor a service that is provisioning, scaling, or restoring: it shows each task's status and any failure details immediately."),
+		mcp.WithString("service_id",
+			mcp.Required(),
+			mcp.Description("Service UUID"),
+		),
+	), handleGetTaskSummary(cfg))
 }
 
-// apiGet performs an authenticated GET request to the FoundryDB API.
-func apiGet(ctx context.Context, cfg foundrydb.Config, path string) (map[string]interface{}, error) {
-	return apiRequest(ctx, cfg, http.MethodGet, path, nil)
-}
-
-// apiPost performs an authenticated POST request to the FoundryDB API.
-func apiPost(ctx context.Context, cfg foundrydb.Config, path string, body interface{}) (map[string]interface{}, error) {
-	return apiRequest(ctx, cfg, http.MethodPost, path, body)
-}
-
-func apiRequest(ctx context.Context, cfg foundrydb.Config, method, path string, body interface{}) (map[string]interface{}, error) {
-	apiURL := strings.TrimRight(cfg.APIURL, "/")
-	if apiURL == "" {
-		apiURL = "https://api.foundrydb.com"
-	}
-
-	var reqBody io.Reader
-	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return nil, fmt.Errorf("marshal request: %w", err)
+func handleGetTaskSummary(cfg foundrydb.Config) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		serviceID, _ := req.GetArguments()["service_id"].(string)
+		if serviceID == "" {
+			return mcp.NewToolResultError("service_id is required"), nil
 		}
-		reqBody = bytes.NewReader(data)
+		result, err := apiGet(ctx, cfg, "/managed-services/"+serviceID+"/task-summary")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(formatJSON(result)), nil
 	}
-
-	req, err := http.NewRequestWithContext(ctx, method, apiURL+path, reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-
-	if cfg.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+cfg.Token)
-	} else {
-		req.SetBasicAuth(cfg.Username, cfg.Password)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	req.Header.Set("Accept", "application/json")
-	if cfg.OrgID != "" {
-		req.Header.Set("X-Active-Org-ID", cfg.OrgID)
-	}
-
-	httpClient := &http.Client{Timeout: 30 * time.Second}
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respData, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(respData))
-	}
-
-	if len(respData) == 0 {
-		return nil, nil
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(respData, &result); err != nil {
-		return map[string]interface{}{"raw": string(respData)}, nil
-	}
-	return result, nil
 }
 
 func handleGetMetrics(cfg foundrydb.Config) server.ToolHandlerFunc {

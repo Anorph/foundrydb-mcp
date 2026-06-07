@@ -28,6 +28,9 @@ func RegisterBackupTools(s *server.MCPServer, c *foundrydb.Client) {
 		mcp.WithString("backup_type",
 			mcp.Description("Backup type (optional, uses service default if omitted): full, incremental, pitr"),
 		),
+		mcp.WithBoolean("confirm",
+			mcp.Description(confirmFlagDescription),
+		),
 	), handleTriggerBackup(c))
 }
 
@@ -56,6 +59,10 @@ func handleTriggerBackup(c *foundrydb.Client) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("service_id is required"), nil
 		}
 
+		if denied := requireConfirmFlag(args, fmt.Sprintf("triggering an on-demand backup on %s", serviceID)); denied != nil {
+			return denied, nil
+		}
+
 		backupReq := foundrydb.CreateBackupRequest{}
 		if bt, ok := args["backup_type"].(string); ok && bt != "" {
 			backupReq.BackupType = foundrydb.BackupType(bt)
@@ -67,7 +74,7 @@ func handleTriggerBackup(c *foundrydb.Client) server.ToolHandlerFunc {
 		}
 
 		return mcp.NewToolResultText(fmt.Sprintf(
-			"Backup triggered successfully.\nBackup ID: %s\n\nDetails:\n%s",
+			"Backup triggered successfully.\nBackup ID: %s\nThe backup completes asynchronously; poll list_backups until it reports completed.\n\nDetails:\n%s",
 			backup.ID, formatJSON(backup),
 		)), nil
 	}

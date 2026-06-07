@@ -14,6 +14,7 @@ func main() {
 	cfg := config.Load()
 	sdkCfg := foundrydb.Config{
 		APIURL:   cfg.APIURL,
+		Token:    cfg.Token,
 		Username: cfg.Username,
 		Password: cfg.Password,
 	}
@@ -29,6 +30,10 @@ func main() {
 	tools.RegisterUserTools(s, apiClient)
 	tools.RegisterBackupTools(s, apiClient)
 	tools.RegisterMonitoringTools(s, sdkCfg)
+	tools.RegisterScalingTools(s, sdkCfg)
+	tools.RegisterRecoveryTools(s, apiClient, sdkCfg)
+	tools.RegisterPerformanceTools(s, sdkCfg)
+	tools.RegisterMaintenanceTools(s, sdkCfg)
 
 	if err := server.ServeStdio(s); err != nil {
 		fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)

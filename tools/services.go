@@ -81,6 +81,9 @@ func RegisterServiceTools(s *server.MCPServer, c *foundrydb.Client, cfg foundryd
 		mcp.WithString("agent_purpose",
 			mcp.Description("Purpose of this database: conversation_history, session_cache, structured_data, rag, event_stream."),
 		),
+		mcp.WithBoolean("confirm",
+			mcp.Description(confirmFlagDescription),
+		),
 	), handleCreateService(cfg))
 
 	s.AddTool(mcp.NewTool("list_presets",
@@ -88,10 +91,13 @@ func RegisterServiceTools(s *server.MCPServer, c *foundrydb.Client, cfg foundryd
 	), handleListPresets(c))
 
 	s.AddTool(mcp.NewTool("delete_service",
-		mcp.WithDescription("Permanently delete a managed database service and all its data. This action cannot be undone."),
+		mcp.WithDescription("Permanently delete a managed database service and all its data. This action cannot be undone. Requires confirm to be the exact service name."),
 		mcp.WithString("id",
 			mcp.Required(),
 			mcp.Description("Service UUID to delete"),
+		),
+		mcp.WithString("confirm",
+			mcp.Description("Typed confirmation: must be the exact service NAME (not the UUID). The deletion is rejected if this does not match."),
 		),
 	), handleDeleteService(c))
 
@@ -184,6 +190,10 @@ func handleCreateService(cfg foundrydb.Config) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("name, database_type and plan_name are required"), nil
 		}
 
+		if denied := requireConfirmFlag(args, fmt.Sprintf("creating service %q (%s, %s)", name, dbType, planName)); denied != nil {
+			return denied, nil
+		}
+
 		createReq := foundrydb.CreateServiceRequest{
 			Name:         name,
 			DatabaseType: foundrydb.DatabaseType(dbType),
@@ -258,14 +268,19 @@ func handleListPresets(c *foundrydb.Client) server.ToolHandlerFunc {
 
 func handleDeleteService(c *foundrydb.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		id, _ := req.GetArguments()["id"].(string)
+		args := req.GetArguments()
+		id, _ := args["id"].(string)
 		if id == "" {
 			return mcp.NewToolResultError("id is required"), nil
+		}
+		svc, denied := requireTypedConfirm(ctx, c, args, id, fmt.Sprintf("deleting service %s and all its data", id))
+		if denied != nil {
+			return denied, nil
 		}
 		if err := c.DeleteService(ctx, id); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
-		return mcp.NewToolResultText(fmt.Sprintf("Service %s deletion initiated. The service and all its data will be permanently removed.", id)), nil
+		return mcp.NewToolResultText(fmt.Sprintf("Service %s (%s) deletion initiated. The service and all its data will be permanently removed.", svc.Name, id)), nil
 	}
 }
 
