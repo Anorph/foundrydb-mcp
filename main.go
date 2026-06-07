@@ -34,6 +34,8 @@ func main() {
 	tools.RegisterRecoveryTools(s, apiClient, sdkCfg)
 	tools.RegisterPerformanceTools(s, sdkCfg)
 	tools.RegisterMaintenanceTools(s, sdkCfg)
+	tools.RegisterWebhookTools(s, sdkCfg)
+	tools.RegisterBillingTools(s, sdkCfg)
 
 	if err := server.ServeStdio(s); err != nil {
 		fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)

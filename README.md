@@ -16,7 +16,7 @@ Every tool belongs to exactly one tier, enforced before any API call is made:
 
 Mutations are brokered, never free-text: for example `apply_index_recommendation` passes only a recommendation ID, and the platform composes and executes the `CREATE INDEX CONCURRENTLY` statement through an audited task. The model never authors SQL.
 
-## Tools (24)
+## Tools (37)
 
 | Tool | Tier | Description |
 |------|------|-------------|
@@ -47,6 +47,18 @@ Mutations are brokered, never free-text: for example `apply_index_recommendation
 | `get_maintenance_window` | read-only | Configured maintenance window |
 | `set_maintenance_window` | mutating | Create or replace the window |
 | `list_pending_advisories` | read-only | Maintenance operations with status |
+| `list_webhooks` | read-only | Configured webhook endpoints |
+| `get_webhook` | read-only | A webhook's URL, events, and active state |
+| `list_webhook_deliveries` | read-only | Recent delivery attempts (debugging) |
+| `create_webhook` | mutating | Subscribe a URL to events; returns a signing secret once |
+| `test_webhook` | mutating | Dispatch a test event to verify the receiver |
+| `delete_webhook` | mutating | Stop delivering events to an endpoint |
+| `get_billing_usage` | read-only | Credit balance, current period, per-service cost |
+| `get_billing_invoices` | read-only | Invoices with status, amount, and dates |
+| `get_billing_credits` | read-only | Credit balance and recent transactions |
+| `get_billing_pricing` | read-only | Compute tiers, bundles, storage and backup rates |
+
+Webhook tools need `webhooks:*` scopes; billing tools need `billing:read`. Webhook deletes are mutating, not destructive: they remove an integration but never database data.
 
 ## Installation
 
