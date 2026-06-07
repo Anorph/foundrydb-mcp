@@ -34,6 +34,7 @@ func main() {
 	tools.RegisterRecoveryTools(s, apiClient, sdkCfg)
 	tools.RegisterPerformanceTools(s, sdkCfg)
 	tools.RegisterMaintenanceTools(s, sdkCfg)
+	tools.RegisterDataPipelineTools(s, apiClient)
 	tools.RegisterWebhookTools(s, sdkCfg)
 	tools.RegisterBillingTools(s, sdkCfg)
 

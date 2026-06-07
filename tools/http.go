@@ -46,20 +46,6 @@ func apiDelete(ctx context.Context, cfg foundrydb.Config, path string) (map[stri
 	return apiRequest(ctx, cfg, http.MethodDelete, path, nil)
 }
 
-// splitAndTrim splits a comma-separated string into a slice with each element
-// trimmed of surrounding whitespace, dropping empties. Used for list-valued
-// tool parameters passed as a single comma-separated string.
-func splitAndTrim(s string) []string {
-	parts := strings.Split(s, ",")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if t := strings.TrimSpace(p); t != "" {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
 func apiRequest(ctx context.Context, cfg foundrydb.Config, method, path string, body interface{}) (map[string]interface{}, error) {
 	apiURL := strings.TrimRight(cfg.APIURL, "/")
 	if apiURL == "" {

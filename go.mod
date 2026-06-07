@@ -3,7 +3,7 @@ module github.com/anorph/foundrydb-mcp
 go 1.24
 
 require (
-	github.com/anorph/foundrydb-sdk-go v0.0.0-20260607181103-02cb4b50db6a
+	github.com/anorph/foundrydb-sdk-go v0.0.0-20260607200449-97a8e4514989
 	github.com/mark3labs/mcp-go v0.46.0
 )
 

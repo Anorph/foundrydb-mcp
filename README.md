@@ -16,7 +16,7 @@ Every tool belongs to exactly one tier, enforced before any API call is made:
 
 Mutations are brokered, never free-text: for example `apply_index_recommendation` passes only a recommendation ID, and the platform composes and executes the `CREATE INDEX CONCURRENTLY` statement through an audited task. The model never authors SQL.
 
-## Tools (37)
+## Tools (41)
 
 | Tool | Tier | Description |
 |------|------|-------------|
@@ -47,6 +47,10 @@ Mutations are brokered, never free-text: for example `apply_index_recommendation
 | `get_maintenance_window` | read-only | Configured maintenance window |
 | `set_maintenance_window` | mutating | Create or replace the window |
 | `list_pending_advisories` | read-only | Maintenance operations with status |
+| `list_data_pipelines` | read-only | Data pipelines in an organization |
+| `get_data_pipeline_status` | read-only | Pipeline status: connector and task state, source lag |
+| `create_data_pipeline` | mutating | Change-data-capture from PostgreSQL into Kafka (`cdc_pg_to_kafka`) |
+| `delete_data_pipeline` | mutating | Tear down the connector and replication slot; data untouched |
 | `list_webhooks` | read-only | Configured webhook endpoints |
 | `get_webhook` | read-only | A webhook's URL, events, and active state |
 | `list_webhook_deliveries` | read-only | Recent delivery attempts (debugging) |
@@ -58,7 +62,7 @@ Mutations are brokered, never free-text: for example `apply_index_recommendation
 | `get_billing_credits` | read-only | Credit balance and recent transactions |
 | `get_billing_pricing` | read-only | Compute tiers, bundles, storage and backup rates |
 
-Webhook tools need `webhooks:*` scopes; billing tools need `billing:read`. Webhook deletes are mutating, not destructive: they remove an integration but never database data.
+Data pipeline tools need `pipelines:*` scopes; webhook tools need `webhooks:*` scopes; billing tools need `billing:read`. Webhook deletes are mutating, not destructive: they remove an integration but never database data.
 
 ## Installation
 
