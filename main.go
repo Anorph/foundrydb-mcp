@@ -37,6 +37,14 @@ func main() {
 	tools.RegisterDataPipelineTools(s, apiClient)
 	tools.RegisterWebhookTools(s, sdkCfg)
 	tools.RegisterBillingTools(s, sdkCfg)
+	tools.RegisterAppServiceTools(s, apiClient, sdkCfg)
+	tools.RegisterAppJobTools(s, apiClient)
+	tools.RegisterQueueTools(s, apiClient)
+	tools.RegisterFileServiceTools(s, sdkCfg)
+	tools.RegisterOrgWebhookTools(s, apiClient)
+	tools.RegisterEdgeTools(s, apiClient)
+	tools.RegisterAIDataTools(s, sdkCfg)
+	tools.RegisterAIActionTools(s, sdkCfg)
 
 	if err := server.ServeStdio(s); err != nil {
 		fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
