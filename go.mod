@@ -13,3 +13,8 @@ require (
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 )
+
+// Compliance methods (GenerateComplianceReport, ListComplianceReports, ComplianceSigningKeys)
+// are present in the local SDK source but not yet published as a tagged release.
+// This replace pins to the local checkout until a new tag is cut and pushed.
+replace github.com/anorph/foundrydb-sdk-go => ../foundrydb-sdk-go

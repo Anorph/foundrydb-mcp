@@ -45,6 +45,7 @@ func main() {
 	tools.RegisterEdgeTools(s, apiClient)
 	tools.RegisterAIDataTools(s, sdkCfg)
 	tools.RegisterAIActionTools(s, sdkCfg)
+	tools.RegisterComplianceTools(s, apiClient)
 
 	if err := server.ServeStdio(s); err != nil {
 		fmt.Fprintf(os.Stderr, "MCP server error: %v\n", err)
