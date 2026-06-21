@@ -14,7 +14,7 @@ import (
 // containers hosted on the platform next to their managed databases, reachable
 // over HTTPS at {name}.foundrydb.com. App-to-database traffic flows over private
 // SDN networking with injected connection credentials.
-func RegisterAppServiceTools(s *server.MCPServer, c *foundrydb.Client, cfg foundrydb.Config) {
+func RegisterAppServiceTools(s *server.MCPServer, c *foundrydb.Client) {
 	s.AddTool(mcp.NewTool("list_app_services",
 		mcp.WithDescription("List the hosted application services (customer containers) visible to the authenticated user."),
 	), handleListAppServices(c))
@@ -367,7 +367,7 @@ func RegisterAppServiceTools(s *server.MCPServer, c *foundrydb.Client, cfg found
 		mcp.WithBoolean("confirm",
 			mcp.Description("Set true to confirm this irreversible erasure."),
 		),
-	), handleDeleteAppServiceAuthUser(cfg))
+	), handleDeleteAppServiceAuthUser(c))
 
 	s.AddTool(mcp.NewTool("delete_app_service_auth_user_by_identifier",
 		mcp.WithDescription("Erase one end-user of a hosted app's auth under the GDPR right to erasure (Art. 17), addressed by a single identifier in the URL path: an email address (contains '@') or a user UUID. This permanently deletes the user and their identity data (identities, sessions, refresh tokens, MFA enrolments, pending login/oauth tokens) and scrubs the user's audit-log rows in the backing database. Irreversible: confirm=true is required. The erasure is dispatched asynchronously to the backing database's primary VM and returns a task id."),
@@ -382,7 +382,120 @@ func RegisterAppServiceTools(s *server.MCPServer, c *foundrydb.Client, cfg found
 		mcp.WithBoolean("confirm",
 			mcp.Description("Set true to confirm this irreversible erasure."),
 		),
-	), handleDeleteAppServiceAuthUserByIdentifier(cfg))
+	), handleDeleteAppServiceAuthUserByIdentifier(c))
+
+	s.AddTool(mcp.NewTool("list_attachment_catalog",
+		mcp.WithDescription("List the installable companion apps (for example Metabase, Directus) that can be attached to a database service. Each entry names the attachment kind to pass to create_attachment, a default compute plan, and the database engines it supports. Static and read-only."),
+	), handleListAttachmentCatalog(c))
+
+	s.AddTool(mcp.NewTool("create_attachment",
+		mcp.WithDescription("Attach a companion app from the catalog (see list_attachment_catalog) to a database service. The platform provisions a constrained app service from the catalog descriptor, links it to the database over private SDN, injects connection credentials, and drives it to Running. Supported kinds include metabase, directus, hasura, nocodb, open-webui. Returns the created app service; manage its lifecycle through the app-service tools keyed by its id. Asynchronous; poll get_app_service until Running."),
+		mcp.WithString("managed_service_id",
+			mcp.Required(),
+			mcp.Description("Parent database service UUID to attach the companion app to (must be a database service)."),
+		),
+		mcp.WithString("kind",
+			mcp.Required(),
+			mcp.Description("Catalog companion-app kind to provision (from list_attachment_catalog, e.g. \"metabase\", \"directus\", \"hasura\", \"nocodb\", \"open-webui\")."),
+		),
+		mcp.WithString("plan_name",
+			mcp.Description("Compute-only tier for the companion app. Defaults to the catalog descriptor's default plan."),
+		),
+		mcp.WithString("subdomain",
+			mcp.Description("Optional subdomain override: a single DNS label (letters, digits, hyphens; max 40 chars) used as the app name and primary subdomain. Defaults to a generated name."),
+		),
+		mcp.WithBoolean("confirm",
+			mcp.Description("Set true to confirm provisioning the companion app (provisions a billable VM)."),
+		),
+	), handleCreateAttachment(c))
+
+	s.AddTool(mcp.NewTool("list_attachments",
+		mcp.WithDescription("List the companion apps (from the attachment catalog) attached to a database service. Each entry reports the attachment id, the companion app service id and kind, its status, the attachment wiring status, and its HTTPS URL. Use the app service id with get_app_service to poll provisioning or with the app-service lifecycle tools to manage it."),
+		mcp.WithString("managed_service_id",
+			mcp.Required(),
+			mcp.Description("Parent database service UUID whose attached companion apps to list."),
+		),
+	), handleListAttachments(c))
+
+	s.AddTool(mcp.NewTool("get_attachment_credentials",
+		mcp.WithDescription("Reveal the generated admin login for a catalog attachment's companion app: the admin email and password (for apps such as Metabase whose admin is created by a post-deploy hook) or the reveal-flagged generated values (for apps such as Directus that bootstrap their admin from environment), plus the login URL. The credential is minted once at provisioning, scoped to this companion app, stored encrypted, and decrypted on demand. Only catalog attachments carry credentials; a raw app or one still provisioning returns not-found (poll get_app_service until Running first)."),
+		mcp.WithString("app_service_id",
+			mcp.Required(),
+			mcp.Description("Companion app service UUID (the id returned by create_attachment or listed by list_attachments)."),
+		),
+	), handleGetAttachmentCredentials(c))
+}
+
+func handleListAttachmentCatalog(c *foundrydb.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		catalog, err := c.GetAttachmentCatalog(ctx)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		if len(catalog) == 0 {
+			return mcp.NewToolResultText("No attachment kinds available."), nil
+		}
+		return mcp.NewToolResultText(formatJSON(catalog)), nil
+	}
+}
+
+func handleCreateAttachment(c *foundrydb.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		serviceID, _ := args["managed_service_id"].(string)
+		kind, _ := args["kind"].(string)
+		if serviceID == "" || kind == "" {
+			return mcp.NewToolResultError("managed_service_id and kind are required"), nil
+		}
+		if denied := requireConfirmFlag(args, fmt.Sprintf("attaching companion app %q to database service %s", kind, serviceID)); denied != nil {
+			return denied, nil
+		}
+		createReq := foundrydb.CreateAttachmentRequest{Kind: kind}
+		if plan, ok := args["plan_name"].(string); ok && plan != "" {
+			createReq.PlanName = plan
+		}
+		if subdomain, ok := args["subdomain"].(string); ok && subdomain != "" {
+			createReq.Subdomain = subdomain
+		}
+		app, err := c.CreateAttachment(ctx, serviceID, createReq)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(formatJSON(app)), nil
+	}
+}
+
+func handleListAttachments(c *foundrydb.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		serviceID, _ := args["managed_service_id"].(string)
+		if serviceID == "" {
+			return mcp.NewToolResultError("managed_service_id is required"), nil
+		}
+		attachments, err := c.ListAttachments(ctx, serviceID)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		if len(attachments) == 0 {
+			return mcp.NewToolResultText(fmt.Sprintf("No companion apps attached to database service %s.", serviceID)), nil
+		}
+		return mcp.NewToolResultText(formatJSON(attachments)), nil
+	}
+}
+
+func handleGetAttachmentCredentials(c *foundrydb.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		id, _ := args["app_service_id"].(string)
+		if id == "" {
+			return mcp.NewToolResultError("app_service_id is required"), nil
+		}
+		creds, err := c.GetAttachmentCredentials(ctx, id)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(formatJSON(creds)), nil
+	}
 }
 
 func handleEnableAppServiceAuth(c *foundrydb.Client) server.ToolHandlerFunc {
@@ -531,7 +644,7 @@ func handleRevokeAppServiceAuthSession(c *foundrydb.Client) server.ToolHandlerFu
 	}
 }
 
-func handleDeleteAppServiceAuthUser(cfg foundrydb.Config) server.ToolHandlerFunc {
+func handleDeleteAppServiceAuthUser(c *foundrydb.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		id, _ := args["app_service_id"].(string)
@@ -552,26 +665,15 @@ func handleDeleteAppServiceAuthUser(cfg foundrydb.Config) server.ToolHandlerFunc
 		if denied := requireConfirmFlag(args, fmt.Sprintf("erasing auth end-user (%s) for app service %s under the GDPR right to erasure", subject, id)); denied != nil {
 			return denied, nil
 		}
-		body := map[string]interface{}{}
-		if email != "" {
-			body["email"] = email
-		}
-		if userID != "" {
-			body["user_id"] = userID
-		}
-		result, err := apiPost(ctx, cfg, "/app-services/"+id+"/auth/users/erase", body)
+		taskID, err := c.DeleteAppServiceAuthUser(ctx, id, foundrydb.DeleteAppServiceAuthUserRequest{Email: email, UserID: userID})
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
-		}
-		taskID, _ := result["task_id"].(string)
-		if taskID == "" {
-			taskID = "queued"
 		}
 		return mcp.NewToolResultText(fmt.Sprintf("Auth end-user erasure requested for app service %s (task %s).", id, taskID)), nil
 	}
 }
 
-func handleDeleteAppServiceAuthUserByIdentifier(cfg foundrydb.Config) server.ToolHandlerFunc {
+func handleDeleteAppServiceAuthUserByIdentifier(c *foundrydb.Client) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
 		id, _ := args["app_service_id"].(string)
@@ -591,16 +693,9 @@ func handleDeleteAppServiceAuthUserByIdentifier(cfg foundrydb.Config) server.Too
 		if denied := requireConfirmFlag(args, fmt.Sprintf("erasing auth end-user (%s) for app service %s under the GDPR right to erasure", mode, id)); denied != nil {
 			return denied, nil
 		}
-		result, err := apiDelete(ctx, cfg, "/app-services/"+id+"/auth/users/"+identifier)
+		taskID, err := c.DeleteAppServiceAuthUserByIdentifier(ctx, id, identifier)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
-		}
-		taskID := ""
-		if result != nil {
-			taskID, _ = result["task_id"].(string)
-		}
-		if taskID == "" {
-			taskID = "queued"
 		}
 		return mcp.NewToolResultText(fmt.Sprintf("Auth end-user erasure requested for app service %s (task %s).", id, taskID)), nil
 	}

@@ -37,7 +37,7 @@ func main() {
 	tools.RegisterDataPipelineTools(s, apiClient)
 	tools.RegisterWebhookTools(s, sdkCfg)
 	tools.RegisterBillingTools(s, sdkCfg)
-	tools.RegisterAppServiceTools(s, apiClient, sdkCfg)
+	tools.RegisterAppServiceTools(s, apiClient)
 	tools.RegisterAppJobTools(s, apiClient)
 	tools.RegisterQueueTools(s, apiClient)
 	tools.RegisterFileServiceTools(s, sdkCfg)
