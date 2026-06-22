@@ -27,6 +27,18 @@ func RegisterComplianceTools(s *server.MCPServer, c *foundrydb.Client) {
 	s.AddTool(mcp.NewTool("get_compliance_signing_keys",
 		mcp.WithDescription("Return the platform's published Ed25519 public key set used to verify compliance evidence packets. Auditors use these keys to confirm packet provenance."),
 	), handleGetComplianceSigningKeys(c))
+
+	s.AddTool(mcp.NewTool("list_compliance_subscriptions",
+		mcp.WithDescription("List every supported compliance framework with the organization's subscription status and monthly price. An active subscription is required to generate that framework's packets."),
+		mcp.WithString("organization_id", mcp.Required(), mcp.Description("Organization UUID")),
+	), handleListComplianceSubscriptions(c))
+
+	s.AddTool(mcp.NewTool("set_compliance_subscription",
+		mcp.WithDescription("Subscribe or unsubscribe an organization to a compliance framework (paid monthly add-on gating packet generation). Requires organization owner/admin. Returns the updated subscription list."),
+		mcp.WithString("organization_id", mcp.Required(), mcp.Description("Organization UUID")),
+		mcp.WithString("framework", mcp.Required(), mcp.Description("soc2, gdpr_ropa, dora, or eu_ai_act")),
+		mcp.WithBoolean("enabled", mcp.Required(), mcp.Description("true to subscribe, false to unsubscribe")),
+	), handleSetComplianceSubscription(c))
 }
 
 func handleGenerateComplianceReport(c *foundrydb.Client) server.ToolHandlerFunc {
@@ -74,6 +86,53 @@ func handleGetComplianceSigningKeys(c *foundrydb.Client) server.ToolHandlerFunc 
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		jsonBytes, err := json.Marshal(keys)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(string(jsonBytes)), nil
+	}
+}
+
+func handleListComplianceSubscriptions(c *foundrydb.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		orgID, _ := req.GetArguments()["organization_id"].(string)
+		if orgID == "" {
+			return mcp.NewToolResultError("organization_id is required"), nil
+		}
+		subs, err := c.ListComplianceSubscriptions(ctx, orgID)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		jsonBytes, err := json.Marshal(subs)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(string(jsonBytes)), nil
+	}
+}
+
+func handleSetComplianceSubscription(c *foundrydb.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		orgID, _ := args["organization_id"].(string)
+		framework, _ := args["framework"].(string)
+		enabled, _ := args["enabled"].(bool)
+		if orgID == "" || framework == "" {
+			return mcp.NewToolResultError("organization_id and framework are required"), nil
+		}
+		var (
+			subs []foundrydb.ComplianceSubscription
+			err  error
+		)
+		if enabled {
+			subs, err = c.SubscribeComplianceFramework(ctx, orgID, framework)
+		} else {
+			subs, err = c.UnsubscribeComplianceFramework(ctx, orgID, framework)
+		}
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		jsonBytes, err := json.Marshal(subs)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
