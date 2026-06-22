@@ -384,6 +384,55 @@ func RegisterAppServiceTools(s *server.MCPServer, c *foundrydb.Client) {
 		),
 	), handleDeleteAppServiceAuthUserByIdentifier(c))
 
+	s.AddTool(mcp.NewTool("list_app_service_auth_providers",
+		mcp.WithDescription("List the social-login providers (Google, GitHub) configured for a hosted app's auth. Returns each provider's id, client_id, and optional display_name. The client_secret is never returned."),
+		mcp.WithString("app_service_id",
+			mcp.Required(),
+			mcp.Description("App service UUID (auth must be enabled)."),
+		),
+	), handleListAppServiceAuthProviders(c))
+
+	s.AddTool(mcp.NewTool("upsert_app_service_auth_provider",
+		mcp.WithDescription("Add or update one social-login provider (Google or GitHub) for a hosted app's auth. The same endpoint is used for both add and update: supplying credentials for an existing provider replaces them. The client_secret is write-only: it is stored in the platform secret store and never returned. When the auth configuration is Active the issuer redeploys automatically to pick up the new credentials."),
+		mcp.WithString("app_service_id",
+			mcp.Required(),
+			mcp.Description("App service UUID (auth must be enabled)."),
+		),
+		mcp.WithString("provider",
+			mcp.Required(),
+			mcp.Description("Social provider id: \"google\" or \"github\"."),
+		),
+		mcp.WithString("client_id",
+			mcp.Required(),
+			mcp.Description("OAuth client id from an OAuth app you registered at the provider."),
+		),
+		mcp.WithString("client_secret",
+			mcp.Required(),
+			mcp.Description("OAuth client secret from the provider. Write-only: stored in the platform secret store and never returned."),
+		),
+		mcp.WithString("display_name",
+			mcp.Description("Optional label for the login button (defaults to the provider name when omitted)."),
+		),
+		mcp.WithBoolean("confirm",
+			mcp.Description("Set true to confirm the upsert (triggers an issuer redeploy when auth is Active)."),
+		),
+	), handleUpsertAppServiceAuthProvider(c))
+
+	s.AddTool(mcp.NewTool("remove_app_service_auth_provider",
+		mcp.WithDescription("Remove one social-login provider (Google or GitHub) from a hosted app's auth. Returns the remaining configured providers. When the auth configuration is Active the issuer redeploys automatically; a non-Active configuration picks up the change on its next deploy."),
+		mcp.WithString("app_service_id",
+			mcp.Required(),
+			mcp.Description("App service UUID (auth must be enabled)."),
+		),
+		mcp.WithString("provider",
+			mcp.Required(),
+			mcp.Description("Social provider id to remove: \"google\" or \"github\"."),
+		),
+		mcp.WithBoolean("confirm",
+			mcp.Description("Set true to confirm the removal (triggers an issuer redeploy when auth is Active)."),
+		),
+	), handleRemoveAppServiceAuthProvider(c))
+
 	s.AddTool(mcp.NewTool("list_attachment_catalog",
 		mcp.WithDescription("List the installable companion apps (for example Metabase, Directus) that can be attached to a database service. Each entry names the attachment kind to pass to create_attachment, a default compute plan, and the database engines it supports. Static and read-only."),
 	), handleListAttachmentCatalog(c))
@@ -424,6 +473,80 @@ func RegisterAppServiceTools(s *server.MCPServer, c *foundrydb.Client) {
 			mcp.Description("Companion app service UUID (the id returned by create_attachment or listed by list_attachments)."),
 		),
 	), handleGetAttachmentCredentials(c))
+}
+
+func handleListAppServiceAuthProviders(c *foundrydb.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		id, _ := args["app_service_id"].(string)
+		if id == "" {
+			return mcp.NewToolResultError("app_service_id is required"), nil
+		}
+		providers, err := c.ListAppServiceAuthProviders(ctx, id)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		if len(providers) == 0 {
+			return mcp.NewToolResultText(fmt.Sprintf("No social-login providers configured for app service %s.", id)), nil
+		}
+		return mcp.NewToolResultText(formatJSON(providers)), nil
+	}
+}
+
+func handleUpsertAppServiceAuthProvider(c *foundrydb.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		id, _ := args["app_service_id"].(string)
+		provider, _ := args["provider"].(string)
+		clientID, _ := args["client_id"].(string)
+		clientSecret, _ := args["client_secret"].(string)
+		if id == "" || provider == "" {
+			return mcp.NewToolResultError("app_service_id and provider are required"), nil
+		}
+		if provider != foundrydb.AuthIDPProviderGoogle && provider != foundrydb.AuthIDPProviderGitHub {
+			return mcp.NewToolResultError(fmt.Sprintf("provider must be %q or %q", foundrydb.AuthIDPProviderGoogle, foundrydb.AuthIDPProviderGitHub)), nil
+		}
+		if clientID == "" {
+			return mcp.NewToolResultError("client_id is required"), nil
+		}
+		if clientSecret == "" {
+			return mcp.NewToolResultError("client_secret is required"), nil
+		}
+		if denied := requireConfirmFlag(args, fmt.Sprintf("upserting auth provider %q for app service %s", provider, id)); denied != nil {
+			return denied, nil
+		}
+		upsertReq := foundrydb.UpsertAppServiceAuthProviderRequest{
+			ClientID:     clientID,
+			ClientSecret: clientSecret,
+		}
+		if v, ok := args["display_name"].(string); ok && v != "" {
+			upsertReq.DisplayName = v
+		}
+		providers, err := c.UpsertAppServiceAuthProvider(ctx, id, provider, upsertReq)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(formatJSON(providers)), nil
+	}
+}
+
+func handleRemoveAppServiceAuthProvider(c *foundrydb.Client) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		id, _ := args["app_service_id"].(string)
+		provider, _ := args["provider"].(string)
+		if id == "" || provider == "" {
+			return mcp.NewToolResultError("app_service_id and provider are required"), nil
+		}
+		if denied := requireConfirmFlag(args, fmt.Sprintf("removing auth provider %q from app service %s", provider, id)); denied != nil {
+			return denied, nil
+		}
+		providers, err := c.RemoveAppServiceAuthProvider(ctx, id, provider)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(formatJSON(providers)), nil
+	}
 }
 
 func handleListAttachmentCatalog(c *foundrydb.Client) server.ToolHandlerFunc {
