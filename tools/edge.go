@@ -109,7 +109,7 @@ func RegisterEdgeTools(s *server.MCPServer, c *foundrydb.Client) {
 			mcp.Description("App service UUID (must be edge-configured)."),
 		),
 		mcp.WithString("cache_rules",
-			mcp.Description("JSON array of cache rules, each with path_prefix (string, must start with /) and ttl_seconds (1-86400). A rule may additionally carry the cache-depth fields stale_while_revalidate_seconds (int), stale_if_error_seconds (int), request_collapsing (bool), and cache_key ({vary_query_params?: [..], vary_headers?: [..], vary_cookies?: [..]}). Example: [{\"path_prefix\":\"/static\",\"ttl_seconds\":3600,\"stale_while_revalidate_seconds\":60}]. An empty array clears all cache rules. (Cache-depth fields require an updated foundrydb-sdk-go; until that is published they are ignored by this MCP server.)"),
+			mcp.Description("JSON array of cache rules, each with path_prefix (string, must start with /) and ttl_seconds (1-86400). A rule may additionally carry the cache-depth fields stale_while_revalidate_seconds (int), stale_if_error_seconds (int), request_collapsing (bool), and cache_key ({vary_query_params?: [..], vary_headers?: [..], vary_cookies?: [..]}). Example: [{\"path_prefix\":\"/static\",\"ttl_seconds\":3600,\"stale_while_revalidate_seconds\":60}]. An empty array clears all cache rules."),
 		),
 		mcp.WithNumber("rate_limit_rps",
 			mcp.Description("Optional rate limit: maximum requests per second per bucket (1-10000)."),
@@ -181,28 +181,28 @@ func RegisterEdgeTools(s *server.MCPServer, c *foundrydb.Client) {
 			mcp.Description("JSON array of the additive, ordered, composable rules engine. Each rule: {name?, priority? (lower runs first), match: {path_prefix?, path_regex? (RE2), methods?: [string], header?: {name, value? | regex?}}, action: {type: one of redirect|set_header|rewrite|block|origin_override|continue, plus type-specific fields}}. redirect: {redirect_to, redirect_status?}. set_header: {set_request_headers?, remove_request_headers?, set_response_headers?, remove_response_headers?} (a protected header is rejected). rewrite: {rewrite (absolute path)}. block: {block_status? (default 403)}. origin_override: {origin_override: {host, port, sni?}}. Rules render at one precedence point: after the platform short-circuits and the fixed redirects/CORS/method-filter/auth, before WAF/rate-limit/cache/origin. block/redirect/origin_override are terminal; set_header/rewrite/continue fall through. Empty array clears all rules."),
 		),
 		mcp.WithString("jwt_auth",
-			mcp.Description("JSON JWT validation setting: {enabled: bool, paths?: [prefix], jwks_url?: string, public_keys?: [PEM], issuer?: string, audiences?: [string], required_claims?: [{name, value}], forward_claims_header?: string}. enabled=false clears JWT auth. (Requires an updated foundrydb-sdk-go publishing EdgeJWTAuth; until that is published this argument is documented but ignored by this MCP server.)"),
+			mcp.Description("JSON JWT validation setting: {enabled: bool, paths?: [prefix], jwks_url?: string, public_keys?: [PEM], issuer?: string, audiences?: [string], required_claims?: [{name, value}], forward_claims_header?: string}. enabled=false clears JWT auth."),
 		),
 		mcp.WithString("signed_urls",
-			mcp.Description("JSON signed-URL setting: {enabled: bool, paths?: [prefix], secret_name?: string (reference name only, never the secret value), ttl_seconds?: int, signature_param?: string (default sig), expires_param?: string (default exp)}. enabled=false clears signed-URL enforcement. (Requires an updated foundrydb-sdk-go publishing EdgeSignedURLs; until that is published this argument is documented but ignored by this MCP server.)"),
+			mcp.Description("JSON signed-URL setting: {enabled: bool, paths?: [prefix], secret_name?: string (reference name only, never the secret value), ttl_seconds?: int, signature_param?: string (default sig), expires_param?: string (default exp)}. enabled=false clears signed-URL enforcement."),
 		),
 		mcp.WithString("api_key_auth",
-			mcp.Description("JSON inbound API-key auth setting: {enabled: bool, paths?: [prefix], key_location? (\"header\"|\"query\", default header), key_name?: string (default X-API-Key), keys?: [{name, key? (PLAINTEXT, write-only, hashed server-side, never echoed), rate_tier? (a rate-limit object {requests_per_second, burst, key})}]}. enabled=false clears API-key auth; the response echoes a non-secret view (no key material). (Requires an updated foundrydb-sdk-go publishing EdgeAPIKeyAuthRequest; until that is published this argument is documented but ignored by this MCP server.)"),
+			mcp.Description("JSON inbound API-key auth setting: {enabled: bool, paths?: [prefix], key_location? (\"header\"|\"query\", default header), key_name?: string (default X-API-Key), keys?: [{name, key? (PLAINTEXT, write-only, hashed server-side, never echoed), rate_tier? (a rate-limit object {requests_per_second, burst, key})}]}. enabled=false clears API-key auth; the response echoes a non-secret view (no key material)."),
 		),
 		mcp.WithNumber("waf_paranoia_level",
-			mcp.Description("WAF Core Rule Set paranoia level (1-4; 0 means the platform default PL1). Higher levels add stricter rules at the cost of more false positives. (Requires an updated foundrydb-sdk-go; until that is published this argument is documented but ignored by this MCP server.)"),
+			mcp.Description("WAF Core Rule Set paranoia level (1-4; 0 means the platform default PL1). Higher levels add stricter rules at the cost of more false positives."),
 		),
 		mcp.WithString("waf_rule_exclusions",
-			mcp.Description("JSON array of WAF rule exclusions, each {rule_id?: int, target?: string} (at least one set), used to suppress a specific CRS rule or a target within it to tame false positives. Empty array clears all exclusions. (Requires an updated foundrydb-sdk-go; until that is published this argument is documented but ignored by this MCP server.)"),
+			mcp.Description("JSON array of WAF rule exclusions, each {rule_id?: int, target?: string} (at least one set), used to suppress a specific CRS rule or a target within it to tame false positives. Empty array clears all exclusions."),
 		),
 		mcp.WithString("ddos_profile",
-			mcp.Description("JSON L7 DDoS protection profile: {enabled: bool, per_ip_requests_per_second?: int, per_ip_burst?: int, per_ip_conn_cap?: int}. enabled=false clears the profile. (Requires an updated foundrydb-sdk-go publishing EdgeDDoSProfile; until that is published this argument is documented but ignored by this MCP server.)"),
+			mcp.Description("JSON L7 DDoS protection profile: {enabled: bool, per_ip_requests_per_second?: int, per_ip_burst?: int, per_ip_conn_cap?: int}. enabled=false clears the profile."),
 		),
 		mcp.WithString("bot_management",
-			mcp.Description("JSON bot-management setting: {enabled: bool, action? (\"log\"|\"block\"|\"challenge\", default log), known_bad_bots?: bool, rate_based_heuristic?: bool}. enabled=false clears bot management. (Requires an updated foundrydb-sdk-go publishing EdgeBotManagement; until that is published this argument is documented but ignored by this MCP server.)"),
+			mcp.Description("JSON bot-management setting: {enabled: bool, action? (\"log\"|\"block\"|\"challenge\", default log), known_bad_bots?: bool, rate_based_heuristic?: bool}. enabled=false clears bot management."),
 		),
 		mcp.WithString("ato_protection",
-			mcp.Description("JSON account-takeover (credential-stuffing) protection: {enabled: bool, auth_paths?: [prefix], failure_status_codes?: [int] (default [401,403]), per_ip_threshold_per_min?: int, per_username_threshold_per_min?: int, username_field?: string, action? (\"alert\"|\"ratelimit\"|\"lock\", default alert)}. enabled=false clears ATO protection. (Requires an updated foundrydb-sdk-go publishing EdgeATOProtection; until that is published this argument is documented but ignored by this MCP server.)"),
+			mcp.Description("JSON account-takeover (credential-stuffing) protection: {enabled: bool, auth_paths?: [prefix], failure_status_codes?: [int] (default [401,403]), per_ip_threshold_per_min?: int, per_username_threshold_per_min?: int, username_field?: string, action? (\"alert\"|\"ratelimit\"|\"lock\", default alert)}. enabled=false clears ATO protection."),
 		),
 		mcp.WithBoolean("confirm",
 			mcp.Description("Set true to confirm the settings update."),
@@ -623,15 +623,61 @@ func handleUpdateAppEdgeSettings(c *foundrydb.Client) server.ToolHandlerFunc {
 			settingsReq.Rules = rules
 		}
 
-		// The net-new access/auth, security-hardening, and cache-depth fields
-		// (jwt_auth, signed_urls, api_key_auth, waf_paranoia_level,
-		// waf_rule_exclusions, ddos_profile, bot_management, ato_protection, and
-		// the per-rule cache-depth fields) are documented in this tool's argument
-		// schema but cannot be wired here yet: the pinned foundrydb-sdk-go does not
-		// expose the corresponding request types. Once an updated SDK is published
-		// with those types, decode each argument into settingsReq the same way as
-		// the structured fields above. Until then they are accepted and ignored
-		// rather than fabricating types that would not compile.
+		// Net-new access/auth fields. Each is a JSON string matching the SDK
+		// request type; the per-rule cache-depth fields (stale_*/request_collapsing/
+		// cache_key) ride along on the cache_rules decode above.
+		if raw, ok := args["jwt_auth"].(string); ok && raw != "" {
+			var j foundrydb.EdgeJWTAuth
+			if err := jsonUnmarshalArg(raw, &j); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid jwt_auth JSON: %v", err)), nil
+			}
+			settingsReq.JWTAuth = &j
+		}
+		if raw, ok := args["signed_urls"].(string); ok && raw != "" {
+			var s foundrydb.EdgeSignedURLs
+			if err := jsonUnmarshalArg(raw, &s); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid signed_urls JSON: %v", err)), nil
+			}
+			settingsReq.SignedURLs = &s
+		}
+		if raw, ok := args["api_key_auth"].(string); ok && raw != "" {
+			var a foundrydb.EdgeAPIKeyAuthRequest
+			if err := jsonUnmarshalArg(raw, &a); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid api_key_auth JSON: %v", err)), nil
+			}
+			settingsReq.APIKeyAuth = &a
+		}
+
+		// Net-new security-hardening fields.
+		if v, ok := args["waf_paranoia_level"].(float64); ok && v > 0 {
+			settingsReq.WAFParanoiaLevel = int(v)
+		}
+		if raw, ok := args["waf_rule_exclusions"].(string); ok && raw != "" {
+			if err := jsonUnmarshalArg(raw, &settingsReq.WAFRuleExclusions); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid waf_rule_exclusions JSON: %v", err)), nil
+			}
+		}
+		if raw, ok := args["ddos_profile"].(string); ok && raw != "" {
+			var d foundrydb.EdgeDDoSProfile
+			if err := jsonUnmarshalArg(raw, &d); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid ddos_profile JSON: %v", err)), nil
+			}
+			settingsReq.DDoSProfile = &d
+		}
+		if raw, ok := args["bot_management"].(string); ok && raw != "" {
+			var b foundrydb.EdgeBotManagement
+			if err := jsonUnmarshalArg(raw, &b); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid bot_management JSON: %v", err)), nil
+			}
+			settingsReq.BotManagement = &b
+		}
+		if raw, ok := args["ato_protection"].(string); ok && raw != "" {
+			var a foundrydb.EdgeATOProtection
+			if err := jsonUnmarshalArg(raw, &a); err != nil {
+				return mcp.NewToolResultError(fmt.Sprintf("invalid ato_protection JSON: %v", err)), nil
+			}
+			settingsReq.ATOProtection = &a
+		}
 
 		settings, err := c.UpdateAppEdgeSettings(ctx, id, settingsReq)
 		if err != nil {
