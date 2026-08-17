@@ -16,3 +16,11 @@ require (
 
 // Compliance methods (GenerateComplianceReport, ListComplianceReports, ComplianceSigningKeys)
 // are present in the local SDK source but not yet published as a tagged release.
+
+// The managed inference service methods (ListInferenceServices, CreateInferenceService,
+// CreateServerlessInferenceService, ListServerlessInferenceModels, ListInferenceModelRates,
+// CheckInferenceFit, SwitchInferenceModel, GetInferenceServiceUsage, GetInferenceServiceMetrics,
+// the LoRA adapter registry) and the provider-chain methods (GetInferenceProviderChain,
+// SetInferenceProviderChain, SetInferenceSurfaceOverride, DeleteInferenceSurfaceOverride)
+// are present in the local SDK source but not yet published as a tagged release.
+// tools/inference_services.go builds only once the SDK release carrying them is cut.
