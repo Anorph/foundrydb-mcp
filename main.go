@@ -44,6 +44,7 @@ func main() {
 	tools.RegisterOrgWebhookTools(s, apiClient)
 	tools.RegisterEdgeTools(s, apiClient)
 	tools.RegisterAIDataTools(s, sdkCfg)
+	tools.RegisterInferenceServiceTools(s, apiClient)
 	tools.RegisterAIActionTools(s, sdkCfg)
 	tools.RegisterComplianceTools(s, apiClient)
 	tools.RegisterStackTools(s, apiClient)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/anorph/foundrydb-sdk-go/foundrydb"
@@ -12,8 +13,9 @@ import (
 )
 
 // RegisterAIDataTools registers the AI data surface: embedding pipelines and
-// their runs, vector search over the read-only data plane, and the inference
-// proxy's keys and usage.
+// their runs, vector search over the read-only data plane, the organization's
+// inference provider chain and its per-surface overrides, and the inference
+// proxy's keys, usage, and free token allowance.
 //
 // Provider-config CRUD (the org's raw OpenAI/Anthropic/Mistral/Azure API
 // keys) is deliberately not exposed via MCP: passing raw provider keys
@@ -217,8 +219,65 @@ func RegisterAIDataTools(s *server.MCPServer, cfg foundrydb.Config) {
 		),
 	), handleVectorSearch(cfg))
 
+	s.AddTool(mcp.NewTool("get_inference_provider_chain",
+		mcp.WithDescription("Get an organization's ordered inference provider preference chain, whether every provider in it routes EU-resident, and the per-surface overrides currently in place. Platform AI surfaces (chat, advisor, embedding, agent, explainer) resolve their upstream through this chain unless a surface override replaces it."),
+		mcp.WithString("org_id",
+			mcp.Required(),
+			mcp.Description("Organization UUID."),
+		),
+	), handleGetInferenceProviderChain(cfg))
+
+	s.AddTool(mcp.NewTool("set_inference_provider_chain",
+		mcp.WithDescription("Replace an organization's ordered inference provider chain wholesale. Entries are provider identifiers (openai, anthropic, mistral, azure_openai, groq, foundrydb_managed), unique, optionally closed by the literal terminator 'none' to state that resolution stops there with no platform fallback. Per-surface overrides are untouched and echoed back."),
+		mcp.WithString("org_id",
+			mcp.Required(),
+			mcp.Description("Organization UUID."),
+		),
+		mcp.WithString("provider_chain",
+			mcp.Required(),
+			mcp.Description("Comma-separated ordered provider chain, e.g. foundrydb_managed,mistral,none."),
+		),
+		mcp.WithBoolean("confirm",
+			mcp.Description(confirmFlagDescription),
+		),
+	), handleSetInferenceProviderChain(cfg))
+
+	s.AddTool(mcp.NewTool("set_inference_surface_override",
+		mcp.WithDescription("Replace the inference provider chain for ONE platform AI surface (chat, advisor, embedding, agent, or explainer). While the override exists, that surface resolves through it instead of the org-level chain. The chain follows the same rules as the org-level chain."),
+		mcp.WithString("org_id",
+			mcp.Required(),
+			mcp.Description("Organization UUID."),
+		),
+		mcp.WithString("surface",
+			mcp.Required(),
+			mcp.Description("Surface to override: chat, advisor, embedding, agent, or explainer."),
+		),
+		mcp.WithString("provider_chain",
+			mcp.Required(),
+			mcp.Description("Comma-separated ordered provider chain for this surface, e.g. groq,none."),
+		),
+		mcp.WithBoolean("confirm",
+			mcp.Description(confirmFlagDescription),
+		),
+	), handleSetInferenceSurfaceOverride(cfg))
+
+	s.AddTool(mcp.NewTool("delete_inference_surface_override",
+		mcp.WithDescription("Remove one surface's inference provider chain override so the org-level chain applies to it again. Idempotent: deleting an absent override succeeds."),
+		mcp.WithString("org_id",
+			mcp.Required(),
+			mcp.Description("Organization UUID."),
+		),
+		mcp.WithString("surface",
+			mcp.Required(),
+			mcp.Description("Surface whose override to remove: chat, advisor, embedding, agent, or explainer."),
+		),
+		mcp.WithBoolean("confirm",
+			mcp.Description(confirmFlagDescription),
+		),
+	), handleDeleteInferenceSurfaceOverride(cfg))
+
 	s.AddTool(mcp.NewTool("get_inference_usage",
-		mcp.WithDescription("Get aggregated AI inference proxy usage for an organization: calls, tokens, and cost per model or per key. Defaults to the current month grouped by model."),
+		mcp.WithDescription("Get aggregated AI inference usage for an organization: calls, tokens, and cost per model or per key. Defaults to the current month grouped by model. The response also carries free_tier, the organization's monthly free token allowance standing, which always describes the CURRENT calendar month regardless of the window asked for, because the allowance is a monthly meter rather than an aggregate of the window."),
 		mcp.WithString("org_id",
 			mcp.Required(),
 			mcp.Description("Organization UUID."),
@@ -234,6 +293,14 @@ func RegisterAIDataTools(s *server.MCPServer, cfg foundrydb.Config) {
 		),
 	), handleGetInferenceUsage(cfg))
 
+	s.AddTool(mcp.NewTool("get_inference_free_tier",
+		mcp.WithDescription("Get an organization's monthly free inference token allowance standing for the current calendar month: monthly_tokens (the allowance), tokens_used, tokens_remaining, and cycle_month. Use this to answer \"how much free inference is left\" and to explain when serverless inference starts costing money, since allowance tokens are metered exactly like paid ones but recorded at zero cost and are consumed BEFORE any billing starts. Only platform-served (foundrydb_managed) token calls draw on the allowance: a call to the organization's own third-party provider is billed on that provider's account, and an image generation is priced per image and reports no tokens, so neither consumes it. The allowance resets at each month boundary."),
+		mcp.WithString("org_id",
+			mcp.Required(),
+			mcp.Description("Organization UUID."),
+		),
+	), handleGetInferenceFreeTier(cfg))
+
 	s.AddTool(mcp.NewTool("list_inference_keys",
 		mcp.WithDescription("List an organization's inference proxy keys: name, key prefix, status, token ceiling, and current-cycle usage. Key prefixes only; secrets are never returned after creation."),
 		mcp.WithString("org_id",
@@ -243,7 +310,7 @@ func RegisterAIDataTools(s *server.MCPServer, cfg foundrydb.Config) {
 	), handleListInferenceKeys(cfg))
 
 	s.AddTool(mcp.NewTool("create_inference_key",
-		mcp.WithDescription("Mint a new inference proxy key (fdb-inf-...) for an organization. The secret is returned exactly once in this tool's result and can never be retrieved again: store it immediately. Every key has a hard monthly token ceiling; there is no unlimited key."),
+		mcp.WithDescription("Mint a new inference key (fdb-inf-...) for an organization. The secret is returned exactly once in this tool's result and can never be retrieved again: store it immediately. Every key has a hard monthly token ceiling; there is no unlimited key, and rate_limit_rpm additionally caps its requests per minute. The result carries an activation_note: the key does NOT work at the inference endpoint the instant it is minted, because the key hash reaches the data plane through an edge config reconcile, so a call sent immediately after minting can answer invalid_key and should simply be retried a few seconds later."),
 		mcp.WithString("org_id",
 			mcp.Required(),
 			mcp.Description("Organization UUID."),
@@ -258,6 +325,9 @@ func RegisterAIDataTools(s *server.MCPServer, cfg foundrydb.Config) {
 		),
 		mcp.WithNumber("rate_limit_rpm",
 			mcp.Description("Optional requests-per-minute limit (default 60)."),
+		),
+		mcp.WithString("service_id",
+			mcp.Description("Optional inference service UUID to scope the key to. The key then works against that one service's endpoint and is refused on every other endpoint exactly as an unknown endpoint would be, so a leaked application credential exposes one deployment instead of the organization's whole fleet. Deleting that service deletes the key with it. Omit for the default org-scoped key, usable against any of the organization's inference services."),
 		),
 		mcp.WithBoolean("confirm",
 			mcp.Description(confirmFlagDescription),
@@ -573,6 +643,115 @@ func handleVectorSearch(cfg foundrydb.Config) server.ToolHandlerFunc {
 	}
 }
 
+// orgInferenceChainPath is the organization's provider chain resource; the
+// per-surface overrides hang beneath it.
+func orgInferenceChainPath(orgID string) string {
+	return "/orgs/" + orgID + "/inference/chain"
+}
+
+func handleGetInferenceProviderChain(cfg foundrydb.Config) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		orgID, _ := args["org_id"].(string)
+		if orgID == "" {
+			return mcp.NewToolResultError("org_id is required"), nil
+		}
+		result, err := apiGet(ctx, cfg, orgInferenceChainPath(orgID))
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(formatJSON(result)), nil
+	}
+}
+
+func handleSetInferenceProviderChain(cfg foundrydb.Config) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		orgID, _ := args["org_id"].(string)
+		chainRaw, _ := args["provider_chain"].(string)
+		if orgID == "" || chainRaw == "" {
+			return mcp.NewToolResultError("org_id and provider_chain are required"), nil
+		}
+		chain := parseCSVList(chainRaw)
+		if len(chain) == 0 {
+			return mcp.NewToolResultError("provider_chain must contain at least one entry"), nil
+		}
+		if denied := requireConfirmFlag(args, fmt.Sprintf("replacing the inference provider chain of organization %s with [%s]", orgID, chainRaw)); denied != nil {
+			return denied, nil
+		}
+		result, err := apiPut(ctx, cfg, orgInferenceChainPath(orgID), map[string]interface{}{"provider_chain": chain})
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(formatJSON(result)), nil
+	}
+}
+
+func handleSetInferenceSurfaceOverride(cfg foundrydb.Config) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		orgID, _ := args["org_id"].(string)
+		surface, _ := args["surface"].(string)
+		chainRaw, _ := args["provider_chain"].(string)
+		if orgID == "" || surface == "" || chainRaw == "" {
+			return mcp.NewToolResultError("org_id, surface and provider_chain are required"), nil
+		}
+		chain := parseCSVList(chainRaw)
+		if len(chain) == 0 {
+			return mcp.NewToolResultError("provider_chain must contain at least one entry"), nil
+		}
+		if denied := requireConfirmFlag(args, fmt.Sprintf("overriding the %s surface's inference provider chain for organization %s with [%s]", surface, orgID, chainRaw)); denied != nil {
+			return denied, nil
+		}
+		path := orgInferenceChainPath(orgID) + "/overrides/" + url.PathEscape(surface)
+		result, err := apiPut(ctx, cfg, path, map[string]interface{}{"provider_chain": chain})
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(formatJSON(result)), nil
+	}
+}
+
+func handleDeleteInferenceSurfaceOverride(cfg foundrydb.Config) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		orgID, _ := args["org_id"].(string)
+		surface, _ := args["surface"].(string)
+		if orgID == "" || surface == "" {
+			return mcp.NewToolResultError("org_id and surface are required"), nil
+		}
+		if denied := requireConfirmFlag(args, fmt.Sprintf("removing the %s surface's inference provider chain override for organization %s", surface, orgID)); denied != nil {
+			return denied, nil
+		}
+		path := orgInferenceChainPath(orgID) + "/overrides/" + url.PathEscape(surface)
+		if _, err := apiDelete(ctx, cfg, path); err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		return mcp.NewToolResultText(fmt.Sprintf("Inference chain override for surface %q removed from organization %s; the org-level chain applies to it again.", surface, orgID)), nil
+	}
+}
+
+func handleGetInferenceFreeTier(cfg foundrydb.Config) server.ToolHandlerFunc {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		args := req.GetArguments()
+		orgID, _ := args["org_id"].(string)
+		if orgID == "" {
+			return mcp.NewToolResultError("org_id is required"), nil
+		}
+		// The allowance standing rides on the usage summary, which is the one call
+		// that reports it; the rows are not needed here and are discarded.
+		result, err := apiGet(ctx, cfg, "/orgs/"+orgID+"/inference/usage")
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		freeTier, ok := result["free_tier"]
+		if !ok || freeTier == nil {
+			return mcp.NewToolResultText("The free inference token allowance standing is not available for this organization right now."), nil
+		}
+		return mcp.NewToolResultText(formatJSON(freeTier)), nil
+	}
+}
+
 func handleGetInferenceUsage(cfg foundrydb.Config) server.ToolHandlerFunc {
 	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		args := req.GetArguments()
@@ -638,6 +817,11 @@ func handleCreateInferenceKey(cfg foundrydb.Config) server.ToolHandlerFunc {
 		}
 		if v, ok := args["rate_limit_rpm"].(float64); ok && v > 0 {
 			body["rate_limit_rpm"] = int(v)
+		}
+		// An empty service_id is the absent one: it means org-scoped, never a
+		// scope the server has to reject.
+		if v, ok := args["service_id"].(string); ok && v != "" {
+			body["service_id"] = v
 		}
 		result, err := apiPost(ctx, cfg, "/orgs/"+orgID+"/inference/keys", body)
 		if err != nil {
