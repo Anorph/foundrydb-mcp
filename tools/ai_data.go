@@ -14,16 +14,15 @@ import (
 
 // RegisterAIDataTools registers the AI data surface: embedding pipelines and
 // their runs, vector search over the read-only data plane, the organization's
-// inference provider configs and proxy policy, its provider chain and the
+// inference provider inventory and proxy policy, its provider chain and the
 // per-surface overrides on it, and the inference proxy's keys, usage, and free
 // token allowance.
 //
-// upsert_inference_provider takes a raw provider API key, which therefore
-// passes through the conversation transcript on its way to the API. The key is
-// stored encrypted and no response ever returns it, but the transcript
-// exposure is real: prefer the UI for first-time key configuration, and use
-// this tool with an empty api_key to change a provider's other settings
-// without resending the secret.
+// Configuring a provider (writing the org's raw OpenAI/Anthropic/Mistral/Azure
+// API key) is deliberately not exposed here, and the omission is the point:
+// provider secrets must not transit an agent transcript. Configuration happens
+// in the UI or through the SDKs, where the caller controls the transport. This
+// surface reads provider configs and deletes them, and never writes a secret.
 func RegisterAIDataTools(s *server.MCPServer, cfg foundrydb.Config) {
 	s.AddTool(mcp.NewTool("list_embedding_pipelines",
 		mcp.WithDescription("List the embedding pipelines (managed auto-vectorization jobs) configured on a PostgreSQL service, including mode, schedule, status, and row/token counters."),
@@ -230,33 +229,6 @@ func RegisterAIDataTools(s *server.MCPServer, cfg foundrydb.Config) {
 			mcp.Description("Organization UUID."),
 		),
 	), handleListInferenceProviders(cfg))
-
-	s.AddTool(mcp.NewTool("upsert_inference_provider",
-		mcp.WithDescription("Create or replace an organization's config for one AI inference provider. api_key is required on first configuration; on update an empty api_key keeps the stored key. azure_openai requires base_url (the Azure resource endpoint). The stored key is never returned by any response."),
-		mcp.WithString("org_id",
-			mcp.Required(),
-			mcp.Description("Organization UUID."),
-		),
-		mcp.WithString("provider",
-			mcp.Required(),
-			mcp.Description("Provider to configure: openai, anthropic, mistral, azure_openai, or groq. foundrydb_managed is platform-managed and cannot be configured here; create an inference service instead."),
-		),
-		mcp.WithString("api_key",
-			mcp.Description("Provider API key. SENSITIVE and write-only: it passes through the conversation transcript, is stored encrypted, and is never returned by the API. Required on first configuration; leave empty on update to keep the stored key."),
-		),
-		mcp.WithString("base_url",
-			mcp.Description("Optional provider base URL. Required for azure_openai (the Azure resource endpoint)."),
-		),
-		mcp.WithBoolean("eu_endpoint",
-			mcp.Description("Whether this provider config routes to an EU endpoint."),
-		),
-		mcp.WithBoolean("enabled",
-			mcp.Description("Whether the provider is enabled for routing. Defaults to enabled when omitted on first configuration."),
-		),
-		mcp.WithBoolean("confirm",
-			mcp.Description(confirmFlagDescription),
-		),
-	), handleUpsertInferenceProvider(cfg))
 
 	s.AddTool(mcp.NewTool("delete_inference_provider",
 		mcp.WithDescription("Remove an organization's config for one AI inference provider. Subsequent proxy calls routed to that provider fail until it is configured again; there is no fallback to any platform key."),
@@ -751,41 +723,6 @@ func handleListInferenceProviders(cfg foundrydb.Config) server.ToolHandlerFunc {
 		}
 		if providers, ok := result["providers"].([]interface{}); !ok || len(providers) == 0 {
 			return mcp.NewToolResultText("No inference providers configured for this organization."), nil
-		}
-		return mcp.NewToolResultText(formatJSON(result)), nil
-	}
-}
-
-func handleUpsertInferenceProvider(cfg foundrydb.Config) server.ToolHandlerFunc {
-	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		args := req.GetArguments()
-		orgID, _ := args["org_id"].(string)
-		provider, _ := args["provider"].(string)
-		if orgID == "" || provider == "" {
-			return mcp.NewToolResultError("org_id and provider are required"), nil
-		}
-		if denied := requireConfirmFlag(args, fmt.Sprintf("configuring inference provider %q for organization %s", provider, orgID)); denied != nil {
-			return denied, nil
-		}
-		// api_key and eu_endpoint are always sent: an absent api_key is the
-		// documented "keep the stored key" signal on update, so omitting the
-		// field entirely would change its meaning.
-		apiKey, _ := args["api_key"].(string)
-		euEndpoint, _ := args["eu_endpoint"].(bool)
-		body := map[string]interface{}{
-			"provider":    provider,
-			"api_key":     apiKey,
-			"eu_endpoint": euEndpoint,
-		}
-		if v, ok := args["base_url"].(string); ok && v != "" {
-			body["base_url"] = v
-		}
-		if v, ok := args["enabled"].(bool); ok {
-			body["enabled"] = v
-		}
-		result, err := apiPut(ctx, cfg, orgInferencePath(orgID)+"/providers", body)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
 		}
 		return mcp.NewToolResultText(formatJSON(result)), nil
 	}
