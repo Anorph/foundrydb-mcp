@@ -1,7 +1,7 @@
-github.com/anorph/foundrydb-sdk-go v0.8.1-0.20260624073553-1233c9675832 h1:91YKSeYt8X5Y72DmymJILhvAl0cTwZrEo1cGAZeyghA=
-github.com/anorph/foundrydb-sdk-go v0.8.1-0.20260624073553-1233c9675832/go.mod h1:7BUPjkxnQT72FfoJ+S+X5tAPgLvtwplo2/wgYnIzxzo=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
+github.com/foundrydb/foundrydb-sdk-go v0.13.2 h1:elru8FoBHlLresjD4U9BfzBOnlRx5zed7KeIaI2ioSc=
+github.com/foundrydb/foundrydb-sdk-go v0.13.2/go.mod h1:15HJh+/oe5VFdZbEvhlo+UwZus2QD1nGv2co60VHvw8=
 github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=
 github.com/frankban/quicktest v1.14.6/go.mod h1:4ptaffx2x8+WTWXmUCuVU6aPUX1/Mz7zb5vbUoiM6w0=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=

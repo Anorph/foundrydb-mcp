@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/anorph/foundrydb-sdk-go/foundrydb"
+	"github.com/foundrydb/foundrydb-sdk-go/foundrydb"
 )
 
 // itoa formats an int as a decimal string for building query parameters.

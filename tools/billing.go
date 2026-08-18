@@ -3,7 +3,7 @@ package tools
 import (
 	"context"
 
-	"github.com/anorph/foundrydb-sdk-go/foundrydb"
+	"github.com/foundrydb/foundrydb-sdk-go/foundrydb"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 )

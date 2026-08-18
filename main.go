@@ -6,7 +6,7 @@ import (
 
 	"github.com/anorph/foundrydb-mcp/config"
 	"github.com/anorph/foundrydb-mcp/tools"
-	"github.com/anorph/foundrydb-sdk-go/foundrydb"
+	"github.com/foundrydb/foundrydb-sdk-go/foundrydb"
 	"github.com/mark3labs/mcp-go/server"
 )
 
